@@ -1,0 +1,59 @@
+{
+  "components": [
+    {
+      "name": "tracer-base",
+      "api": "rdk:component:base",
+      "model": "viam-labs:agilex-tracer:base",
+      "attributes": {
+        "can_backend": "auto",
+        "can_interface": "can0",
+        "can_bitrate": 500000,
+        "width_meters": 0.5174,
+        "wheel_circumference_meters": 0.518
+      }
+    },
+    {
+      "name": "tracer-odom",
+      "api": "rdk:component:movement_sensor",
+      "model": "viam-labs:agilex-tracer:odometry",
+      "attributes": {
+        "can_backend": "auto",
+        "can_interface": "can0",
+        "can_bitrate": 500000,
+        "width_meters": 0.5174,
+        "time_interval_msec": 50
+      }
+    },
+    {
+      "name": "tracer-lights",
+      "api": "rdk:component:generic",
+      "model": "viam-labs:agilex-tracer:lights",
+      "attributes": {
+        "can_backend": "auto",
+        "can_interface": "can0",
+        "can_bitrate": 500000
+      }
+    },
+    {
+      "name": "tracer-sc",
+      "api": "rdk:component:base",
+      "model": "sensor-controlled",
+      "attributes": {
+        "base": "tracer-base",
+        "movement_sensor": ["tracer-odom"],
+        "control_parameters": [
+          { "type": "linear_velocity", "p": 0, "i": 0, "d": 0 },
+          { "type": "angular_velocity", "p": 0, "i": 0, "d": 0 }
+        ]
+      },
+      "depends_on": ["tracer-base", "tracer-odom"]
+    }
+  ],
+  "modules": [
+    {
+      "type": "local",
+      "name": "agilex-tracer",
+      "executable_path": "/home/pi/agilex-tracer/run.sh"
+    }
+  ]
+}

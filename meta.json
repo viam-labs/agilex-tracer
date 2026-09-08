@@ -1,0 +1,39 @@
+{
+  "$schema": "https://dl.viam.dev/module.schema.json",
+  "module_id": "viam-labs:agilex-tracer",
+  "visibility": "public",
+  "url": "https://github.com/viam-labs/agilex-tracer",
+  "description": "Viam module for AgileX Tracer / Tracer 2.0 mobile bases over CAN-USB (SocketCAN)",
+  "models": [
+    {
+      "api": "rdk:component:base",
+      "model": "viam-labs:agilex-tracer:base",
+      "description": "Tracer differential base: SetVelocity/SetPower/Stop over SocketCAN",
+      "markdown_link": "README.md#tracer-base"
+    },
+    {
+      "api": "rdk:component:movement_sensor",
+      "model": "viam-labs:agilex-tracer:odometry",
+      "description": "Wheeled odometry from Tracer left/right tire odometers and chassis velocity feedback",
+      "markdown_link": "README.md#tracer-odometry"
+    },
+    {
+      "api": "rdk:component:generic",
+      "model": "viam-labs:agilex-tracer:lights",
+      "description": "Front light control via DoCommand",
+      "markdown_link": "README.md#tracer-lights"
+    }
+  ],
+  "applications": null,
+  "markdown_link": "README.md",
+  "entrypoint": "run.sh",
+  "first_run": "setup.sh",
+  "build": {
+    "setup": "./setup.sh",
+    "build": "./build.sh",
+    "path": "module.tar.gz",
+    "arch": [
+      "linux/any"
+    ]
+  }
+}

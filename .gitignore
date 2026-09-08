@@ -23,6 +23,7 @@ wheels/
 share/python-wheels/
 *.egg-info/
 .installed.cfg
+.installed
 *.egg
 MANIFEST
 
@@ -156,6 +157,13 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+module.tar.gz
+dist/
+build/
+*.spec
+.installed
+.viam-gen-info
+
 
 # Spyder project settings
 .spyderproject

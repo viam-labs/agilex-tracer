@@ -1,0 +1,4 @@
+viam-sdk>=0.48.0
+typing-extensions
+python-can
+pyserial
