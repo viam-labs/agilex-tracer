@@ -119,7 +119,7 @@ class TracerOdometry(MovementSensor, EasyResource):
         self, config: ComponentConfig, dependencies: Mapping[ResourceName, ResourceBase]
     ):
         attrs = struct_to_dict(config.attributes)
-        backend, channel, bitrate = parse_can_attrs(attrs)
+        backend, channel, bitrate, auto_up = parse_can_attrs(attrs)
         self._width_m = _attr_float(attrs, "width_meters", proto.DEFAULT_TRACK_WIDTH_M)
         interval_ms = _attr_float(attrs, "time_interval_msec", 50.0)
         self._time_interval_s = max(0.01, interval_ms / 1000.0)
@@ -146,7 +146,7 @@ class TracerOdometry(MovementSensor, EasyResource):
             self._client = None
         if self._client is None:
             self._client = get_client(
-                backend, channel, bitrate, logger=self.logger
+                backend, channel, bitrate, logger=self.logger, auto_up=auto_up
             )
         self._backend = backend
         self._channel = channel
@@ -359,12 +359,10 @@ class TracerOdometry(MovementSensor, EasyResource):
             lin = self._lin_vel_y_m_s
             ang = self._ang_vel_z_deg_s
         left_mm = right_mm = 0
-        battery = 0.0
         if self._client is not None:
             snap = self._client.snapshot()
             left_mm = snap.odometer.left_mm
             right_mm = snap.odometer.right_mm
-            battery = snap.system.battery_voltage
         return {
             "position_meters_X": pos_x,
             "position_meters_Y": pos_y,
@@ -373,7 +371,6 @@ class TracerOdometry(MovementSensor, EasyResource):
             "angular_velocity_deg_s": ang,
             "left_odometer_mm": left_mm,
             "right_odometer_mm": right_mm,
-            "battery_voltage": battery,
         }
 
     async def do_command(

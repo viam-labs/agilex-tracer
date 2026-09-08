@@ -18,6 +18,12 @@
       "markdown_link": "README.md#tracer-odometry"
     },
     {
+      "api": "rdk:component:power_sensor",
+      "model": "viam-labs:agilex-tracer:power",
+      "description": "Battery voltage and chassis status from Tracer system feedback (CAN 0x211)",
+      "markdown_link": "README.md#tracer-power"
+    },
+    {
       "api": "rdk:component:generic",
       "model": "viam-labs:agilex-tracer:lights",
       "description": "Front light control via DoCommand",

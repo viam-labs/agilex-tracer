@@ -35,6 +35,16 @@
       }
     },
     {
+      "name": "tracer-power",
+      "api": "rdk:component:power_sensor",
+      "model": "viam-labs:agilex-tracer:power",
+      "attributes": {
+        "can_backend": "auto",
+        "can_interface": "can0",
+        "can_bitrate": 500000
+      }
+    },
+    {
       "name": "tracer-sc",
       "api": "rdk:component:base",
       "model": "sensor-controlled",

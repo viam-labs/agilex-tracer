@@ -10,6 +10,7 @@ Protocol reference: [TRACER 2.0 User Manual](https://cdn.shopify.com/s/files/1/0
 | --- | --- | --- |
 | `viam-labs:agilex-tracer:base` | `rdk:component:base` | Drive the chassis (`SetPower`, `SetVelocity`, `Stop`, open-loop `MoveStraight` / `Spin`) |
 | `viam-labs:agilex-tracer:odometry` | `rdk:component:movement_sensor` | Wheeled odometry from left/right tire odometers (0x311) + velocity feedback (0x221) |
+| `viam-labs:agilex-tracer:power` | `rdk:component:power_sensor` | Battery voltage + chassis status from system feedback (0x211) |
 | `viam-labs:agilex-tracer:lights` | `rdk:component:generic` | Front light control via `DoCommand` |
 
 Wrap the base + odometry with Viam’s builtin [`sensor-controlled`](https://docs.viam.com/reference/components/base/sensor-controlled/) base for closed-loop `SetVelocity` / `MoveStraight` / `Spin`.
@@ -33,6 +34,8 @@ sudo ip link set can0 type can bitrate 500000
 sudo ip link set can0 up
 candump can0
 ```
+
+By default the module also tries this bring-up itself (`can_auto_up: true`) when `can0` is down — `viam-server` must be allowed to run `ip`/`modprobe` (typically root). Set `"can_auto_up": false` to disable.
 
 ### slcan
 
@@ -85,6 +88,7 @@ See [`example_config.json`](example_config.json). Minimal attributes:
 | --- | --- | --- |
 | `can_backend` | `auto` | `socketcan`, `slcan`, or `auto` |
 | `can_interface` / `can_channel` | `can0` | SocketCAN name or slcan serial path |
+| `can_auto_up` | `true` | Bring up SocketCAN (`ip link …`) on open if down |
 | `can_bitrate` | `500000` | Must match chassis (500 kbit/s) |
 | `width_meters` | `0.5174` | Track width (manual wheelbase) |
 | `wheel_circumference_meters` | `0.518` | Used in `GetProperties` |
@@ -114,6 +118,22 @@ Base `DoCommand` helpers: `enable_can_control`, `clear_faults`, `get_status`.
 Reports `LinearVelocity` (Y, m/s), `AngularVelocity` (Z, deg/s), `Orientation` (yaw), and `Position` (geo encoding compatible with sensor-controlled `MoveStraight`), matching builtin [wheeled-odometry](https://docs.viam.com/reference/components/movement-sensor/wheeled-odometry/) conventions.
 
 `DoCommand`: `reset_odometry`, `set_origin` (`lat` / `long`).
+
+### Tracer power
+
+```json
+{
+  "name": "tracer-power",
+  "api": "rdk:component:power_sensor",
+  "model": "viam-labs:agilex-tracer:power",
+  "attributes": {
+    "can_backend": "auto",
+    "can_interface": "can0"
+  }
+}
+```
+
+`GetVoltage` returns DC battery volts from system status (0x211). Current/power are not on the Tracer CAN bus (returned as 0). `GetReadings` also includes `emergency_stop`, `under_voltage`, `control_mode_name`, and related chassis flags.
 
 ### Sensor-controlled wrapper
 
@@ -167,7 +187,7 @@ Modes: `off` (0), `on` (1), `breathe` (2), `custom` (3) with `brightness` 0–10
 
 ## Shared CAN client
 
-Base, odometry, and lights with the same `can_backend` + channel + bitrate share one bus and RX thread (reference-counted). Configure all three identically.
+Base, odometry, power, and lights with the same `can_backend` + channel + bitrate share one bus and RX thread (reference-counted). Configure all identically.
 
 ## License
 

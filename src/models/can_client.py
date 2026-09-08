@@ -65,6 +65,95 @@ def _is_network_down(exc: BaseException) -> bool:
     return False
 
 
+def _run_cmd(argv: list[str]) -> Tuple[int, str]:
+    import subprocess
+
+    try:
+        proc = subprocess.run(
+            argv,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return 1, str(exc)
+    out = (proc.stdout or "") + (proc.stderr or "")
+    return proc.returncode, out.strip()
+
+
+def _try_bringup_socketcan(channel: str, bitrate: int, log: Any = None) -> bool:
+    """Best-effort bring-up of a SocketCAN iface (needs CAP_NET_ADMIN / root)."""
+
+    def _log(msg: str, *args: Any) -> None:
+        if log is None:
+            return
+        fn = getattr(log, "info", None) or getattr(log, "warning", None)
+        if fn is not None:
+            fn(msg, *args)
+
+    _run_cmd(["modprobe", "gs_usb"])
+    # Configure + up. `down` first clears a stale bitrate when re-plugging.
+    _run_cmd(["ip", "link", "set", channel, "down"])
+    code, out = _run_cmd(
+        [
+            "ip",
+            "link",
+            "set",
+            channel,
+            "up",
+            "type",
+            "can",
+            "bitrate",
+            str(int(bitrate)),
+        ]
+    )
+    if code != 0:
+        # Fallback without combined "up type can" (older iproute2).
+        _run_cmd(
+            [
+                "ip",
+                "link",
+                "set",
+                channel,
+                "type",
+                "can",
+                "bitrate",
+                str(int(bitrate)),
+            ]
+        )
+        code, out = _run_cmd(["ip", "link", "set", channel, "up"])
+    state = _socketcan_operstate(channel)
+    ok = state in ("up", "unknown")
+    if ok:
+        _log("Brought up SocketCAN %s (operstate=%s)", channel, state)
+    else:
+        _log(
+            "Could not bring up SocketCAN %s (operstate=%s, ip exit=%s): %s",
+            channel,
+            state,
+            code,
+            out or "(no output)",
+        )
+    return ok
+
+
+def _attr_bool(attrs: Mapping[str, Any], key: str, default: bool) -> bool:
+    if key not in attrs or attrs[key] is None:
+        return default
+    value = attrs[key]
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    text = str(value).strip().lower()
+    if text in ("1", "true", "yes", "on"):
+        return True
+    if text in ("0", "false", "no", "off"):
+        return False
+    return default
+
+
 _registry_lock = threading.Lock()
 _clients: Dict[str, "TracerCanClient"] = {}
 
@@ -100,8 +189,8 @@ def client_registry_key(backend: str, channel: str, bitrate: int) -> str:
     return f"{backend}:{channel}:{int(bitrate)}"
 
 
-def parse_can_attrs(attrs: Mapping[str, Any]) -> Tuple[str, str, int]:
-    """Return (backend, channel, bitrate) from component attributes."""
+def parse_can_attrs(attrs: Mapping[str, Any]) -> Tuple[str, str, int, bool]:
+    """Return (backend, channel, bitrate, can_auto_up) from component attributes."""
     backend = "auto"
     if "can_backend" in attrs and attrs["can_backend"] is not None:
         backend = str(attrs["can_backend"]).strip() or "auto"
@@ -122,12 +211,16 @@ def parse_can_attrs(attrs: Mapping[str, Any]) -> Tuple[str, str, int]:
             bitrate = int(attrs[key])
             break
 
+    # Default on: viam-server on robots is usually root and can0 is often down
+    # until something brings it up after reboot / dongle re-plug.
+    auto_up = _attr_bool(attrs, "can_auto_up", True)
+
     backend = resolve_backend(backend, channel)
     if not channel:
         raise ValueError("can_channel / can_interface must be non-empty")
     if bitrate <= 0:
         raise ValueError("can_bitrate must be > 0")
-    return backend, channel, bitrate
+    return backend, channel, bitrate, auto_up
 
 
 def get_client(
@@ -135,13 +228,16 @@ def get_client(
     channel: str,
     bitrate: int = DEFAULT_BITRATE,
     logger: Any = None,
+    auto_up: bool = True,
 ) -> "TracerCanClient":
     backend = resolve_backend(backend, channel)
     key = client_registry_key(backend, channel, bitrate)
     with _registry_lock:
         client = _clients.get(key)
         if client is None:
-            client = TracerCanClient(backend, channel, bitrate, logger=logger)
+            client = TracerCanClient(
+                backend, channel, bitrate, logger=logger, auto_up=auto_up
+            )
             _clients[key] = client
         client._retain()
         if logger is not None:
@@ -165,10 +261,12 @@ class TracerCanClient:
         channel: str,
         bitrate: int = DEFAULT_BITRATE,
         logger: Any = None,
+        auto_up: bool = True,
     ):
         self.backend = backend
         self.channel = channel
         self.bitrate = int(bitrate)
+        self.auto_up = bool(auto_up)
         # Back-compat alias used in status/do_command responses.
         self.interface = channel
         self.logger = logger
@@ -221,14 +319,15 @@ class TracerCanClient:
                     "with a configured can0 interface (or can_backend=slcan)."
                 ) from e
             state = _socketcan_operstate(self.channel)
-            if state == "down":
-                raise RuntimeError(_socketcan_iface_hint(self.channel))
+            if self.auto_up and state != "up":
+                _try_bringup_socketcan(self.channel, self.bitrate, self.logger)
+                state = _socketcan_operstate(self.channel)
             try:
                 return can.Bus(
                     channel=self.channel, interface="socketcan", bitrate=self.bitrate
                 )
             except Exception as e:
-                if _is_network_down(e) or state is None:
+                if _is_network_down(e):
                     raise RuntimeError(_socketcan_iface_hint(self.channel)) from e
                 raise
 

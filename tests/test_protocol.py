@@ -77,17 +77,21 @@ class BackendTests(unittest.TestCase):
         self.assertEqual(resolve_backend("auto", "can0"), "socketcan")
 
     def test_parse_attrs_aliases(self):
-        backend, channel, bitrate = parse_can_attrs(
+        backend, channel, bitrate, auto_up = parse_can_attrs(
             {"can_backend": "slcan", "can_channel": "/dev/ttyACM0", "can_bitrate": 500000}
         )
         self.assertEqual(backend, "slcan")
         self.assertEqual(channel, "/dev/ttyACM0")
         self.assertEqual(bitrate, 500000)
+        self.assertTrue(auto_up)
 
-        backend, channel, bitrate = parse_can_attrs({"can_interface": "can0"})
+        backend, channel, bitrate, auto_up = parse_can_attrs(
+            {"can_interface": "can0", "can_auto_up": False}
+        )
         self.assertEqual(backend, "socketcan")
         self.assertEqual(channel, "can0")
         self.assertEqual(bitrate, 500000)
+        self.assertFalse(auto_up)
 
     def test_reject_gs_usb(self):
         with self.assertRaises(ValueError):

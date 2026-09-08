@@ -95,7 +95,7 @@ class TracerBase(Base, EasyResource):
         self, config: ComponentConfig, dependencies: Mapping[ResourceName, ResourceBase]
     ):
         attrs = struct_to_dict(config.attributes)
-        backend, channel, bitrate = parse_can_attrs(attrs)
+        backend, channel, bitrate, auto_up = parse_can_attrs(attrs)
         self._width_m = _attr_float(attrs, "width_meters", proto.DEFAULT_TRACK_WIDTH_M)
         self._wheel_circumference_m = _attr_float(
             attrs, "wheel_circumference_meters", proto.DEFAULT_WHEEL_CIRCUMFERENCE_M
@@ -119,7 +119,7 @@ class TracerBase(Base, EasyResource):
 
         if self._client is None:
             self._client = get_client(
-                backend, channel, bitrate, logger=self.logger
+                backend, channel, bitrate, logger=self.logger, auto_up=auto_up
             )
         self._backend = backend
         self._channel = channel
