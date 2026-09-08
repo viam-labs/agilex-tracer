@@ -161,6 +161,20 @@ def encode_clear_fault(which: int = 0) -> bytes:
     return bytes([int(which) & 0xFF])
 
 
+def decode_battery_voltage(raw: int) -> float:
+    """Convert system-status battery raw count to volts.
+
+    Manual / ugv_sdk: actual voltage × 10 (0.1 V resolution). Some Tracer
+    firmwares appear to send × 100 (0.01 V); a 24 V pack never exceeds ~30 V,
+    so values that decode above 40 V with ×10 are treated as ×100.
+    """
+    raw = int(raw) & 0xFFFF
+    volts = raw / 10.0
+    if volts > 40.0:
+        volts = raw / 100.0
+    return volts
+
+
 def decode_system_status(data: bytes, now: float) -> Optional[SystemStatus]:
     if len(data) < 8:
         return None
@@ -169,7 +183,7 @@ def decode_system_status(data: bytes, now: float) -> Optional[SystemStatus]:
     return SystemStatus(
         vehicle_state=data[0],
         control_mode=data[1],
-        battery_voltage=voltage_raw / 10.0,
+        battery_voltage=decode_battery_voltage(voltage_raw),
         fault_bits=fault,
         count=data[7],
         last_update=now,

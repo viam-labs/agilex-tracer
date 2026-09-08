@@ -66,6 +66,12 @@ class ProtocolTests(unittest.TestCase):
         self.assertAlmostEqual(status.battery_voltage, 24.5)
         self.assertTrue(status.emergency_stop)
 
+    def test_decode_battery_voltage_scales(self):
+        # Manual ×10 encoding (0.1 V).
+        self.assertAlmostEqual(proto.decode_battery_voltage(265), 26.5)
+        # Some Tracer firmwares send ×100 (0.01 V) → raw 2650.
+        self.assertAlmostEqual(proto.decode_battery_voltage(2650), 26.5)
+
 
 class BackendTests(unittest.TestCase):
     def test_resolve_explicit(self):
