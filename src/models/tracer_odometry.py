@@ -193,14 +193,29 @@ class TracerOdometry(MovementSensor, EasyResource):
         if self._client is None:
             return
         state = self._client.snapshot()
+        now = time.time()
+
+        # Velocities must update even when wheel odometers are missing/stale —
+        # SLAM and sensor-controlled bases read GetLinear/AngularVelocity.
+        can_vel_fresh = (
+            state.motion.last_update > 0 and (now - state.motion.last_update) < 0.5
+        )
+
         odom = state.odometer
         if odom.last_update <= 0:
+            with self._lock:
+                if can_vel_fresh and self._prefer_can_velocity:
+                    self._lin_vel_y_m_s = state.motion.linear_m_s
+                    self._ang_vel_z_deg_s = math.degrees(state.motion.angular_rad_s)
             return
 
         with self._lock:
             if self._last_left_mm is None or self._last_right_mm is None:
                 self._last_left_mm = odom.left_mm
                 self._last_right_mm = odom.right_mm
+                if can_vel_fresh and self._prefer_can_velocity:
+                    self._lin_vel_y_m_s = state.motion.linear_m_s
+                    self._ang_vel_z_deg_s = math.degrees(state.motion.angular_rad_s)
                 return
 
             left_delta_m = (odom.left_mm - self._last_left_mm) / 1000.0
@@ -210,6 +225,9 @@ class TracerOdometry(MovementSensor, EasyResource):
 
             # Guard against CAN counter resets / wrap glitches.
             if abs(left_delta_m) > 5.0 or abs(right_delta_m) > 5.0:
+                if can_vel_fresh and self._prefer_can_velocity:
+                    self._lin_vel_y_m_s = state.motion.linear_m_s
+                    self._ang_vel_z_deg_s = math.degrees(state.motion.angular_rad_s)
                 return
 
             center_dist = (left_delta_m + right_delta_m) / 2.0
@@ -233,14 +251,9 @@ class TracerOdometry(MovementSensor, EasyResource):
             integrated_lin = center_dist / dt
             integrated_ang_deg = math.degrees(center_angle) / dt
 
-            if self._prefer_can_velocity and state.motion.last_update > 0:
-                age = time.time() - state.motion.last_update
-                if age < 0.5:
-                    self._lin_vel_y_m_s = state.motion.linear_m_s
-                    self._ang_vel_z_deg_s = math.degrees(state.motion.angular_rad_s)
-                else:
-                    self._lin_vel_y_m_s = integrated_lin
-                    self._ang_vel_z_deg_s = integrated_ang_deg
+            if self._prefer_can_velocity and can_vel_fresh:
+                self._lin_vel_y_m_s = state.motion.linear_m_s
+                self._ang_vel_z_deg_s = math.degrees(state.motion.angular_rad_s)
             else:
                 self._lin_vel_y_m_s = integrated_lin
                 self._ang_vel_z_deg_s = integrated_ang_deg
@@ -262,10 +275,10 @@ class TracerOdometry(MovementSensor, EasyResource):
         timeout: Optional[float] = None,
         **kwargs,
     ) -> Tuple[GeoPoint, float]:
-        with self._lock:
-            if extra and extra.get("return_relative"):
-                return GeoPoint(latitude=self._pos_y_m, longitude=self._pos_x_m), 0.0
-            return GeoPoint(latitude=self._coord_lat, longitude=self._coord_lng), 0.0
+        raise NotSupportedError(
+            f"MovementSensor named {self.name} does not support returning position "
+            "(wheel odometry exposes velocity and orientation only)"
+        )
 
     async def get_linear_velocity(
         self,
@@ -274,8 +287,14 @@ class TracerOdometry(MovementSensor, EasyResource):
         timeout: Optional[float] = None,
         **kwargs,
     ) -> Vector3:
+        # Prefer live chassis motion feedback (0x221) so SLAM sees vx while moving
+        # even if wheel-odometer integration has not advanced yet.
+        if self._prefer_can_velocity and self._client is not None:
+            motion = self._client.snapshot().motion
+            if motion.last_update > 0 and (time.time() - motion.last_update) < 0.5:
+                return Vector3(x=0.0, y=float(motion.linear_m_s), z=0.0)
         with self._lock:
-            # sensor-controlled reads Y as forward velocity (m/s).
+            # sensor-controlled / wheeled convention: +Y forward (m/s).
             return Vector3(x=0.0, y=self._lin_vel_y_m_s, z=0.0)
 
     async def get_angular_velocity(
@@ -285,6 +304,12 @@ class TracerOdometry(MovementSensor, EasyResource):
         timeout: Optional[float] = None,
         **kwargs,
     ) -> Vector3:
+        if self._prefer_can_velocity and self._client is not None:
+            motion = self._client.snapshot().motion
+            if motion.last_update > 0 and (time.time() - motion.last_update) < 0.5:
+                return Vector3(
+                    x=0.0, y=0.0, z=math.degrees(float(motion.angular_rad_s))
+                )
         with self._lock:
             return Vector3(x=0.0, y=0.0, z=self._ang_vel_z_deg_s)
 
@@ -332,7 +357,7 @@ class TracerOdometry(MovementSensor, EasyResource):
             linear_velocity_supported=True,
             angular_velocity_supported=True,
             orientation_supported=True,
-            position_supported=True,
+            position_supported=False,
             compass_heading_supported=False,
             linear_acceleration_supported=False,
         )
@@ -353,22 +378,23 @@ class TracerOdometry(MovementSensor, EasyResource):
         timeout: Optional[float] = None,
         **kwargs,
     ) -> Mapping[str, Any]:
+        lin_v = await self.get_linear_velocity(extra=extra, timeout=timeout)
+        ang_v = await self.get_angular_velocity(extra=extra, timeout=timeout)
         with self._lock:
-            pos_x, pos_y = self._pos_x_m, self._pos_y_m
             yaw = self._yaw_rad
-            lin = self._lin_vel_y_m_s
-            ang = self._ang_vel_z_deg_s
         left_mm = right_mm = 0
+        motion_age_s = -1.0
         if self._client is not None:
             snap = self._client.snapshot()
             left_mm = snap.odometer.left_mm
             right_mm = snap.odometer.right_mm
+            if snap.motion.last_update > 0:
+                motion_age_s = time.time() - snap.motion.last_update
         return {
-            "position_meters_X": pos_x,
-            "position_meters_Y": pos_y,
+            "linear_velocity": Vector3(x=lin_v.x, y=lin_v.y, z=lin_v.z),
+            "angular_velocity": Vector3(x=ang_v.x, y=ang_v.y, z=ang_v.z),
             "yaw_deg": math.degrees(yaw),
-            "linear_velocity_m_s": lin,
-            "angular_velocity_deg_s": ang,
+            "can_motion_age_s": motion_age_s,
             "left_odometer_mm": left_mm,
             "right_odometer_mm": right_mm,
         }

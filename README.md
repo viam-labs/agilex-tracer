@@ -115,7 +115,7 @@ Base `DoCommand` helpers: `enable_can_control`, `clear_faults`, `get_status`.
 }
 ```
 
-Reports `LinearVelocity` (Y, m/s), `AngularVelocity` (Z, deg/s), `Orientation` (yaw), and `Position` (geo encoding compatible with sensor-controlled `MoveStraight`), matching builtin [wheeled-odometry](https://docs.viam.com/reference/components/movement-sensor/wheeled-odometry/) conventions.
+Reports `LinearVelocity` (Y, m/s), `AngularVelocity` (Z, deg/s), and `Orientation` (yaw). Position is not advertised (`position_supported=false`) so consumers such as SLAM use velocity integration rather than a fake GeoPoint.
 
 `DoCommand`: `reset_odometry`, `set_origin` (`lat` / `long`).
 
