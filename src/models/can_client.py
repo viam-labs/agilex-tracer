@@ -520,6 +520,21 @@ class TracerCanClient:
                     right_rpm=s.motor_rpm.right_rpm,
                     last_update=s.motor_rpm.last_update,
                 ),
+                bms_basic=proto.BmsBasic(
+                    soc_percent=s.bms_basic.soc_percent,
+                    soh_percent=s.bms_basic.soh_percent,
+                    voltage=s.bms_basic.voltage,
+                    current_a=s.bms_basic.current_a,
+                    temperature_c=s.bms_basic.temperature_c,
+                    last_update=s.bms_basic.last_update,
+                ),
+                bms_extended=proto.BmsExtended(
+                    alarm_status_1=s.bms_extended.alarm_status_1,
+                    alarm_status_2=s.bms_extended.alarm_status_2,
+                    warn_status_1=s.bms_extended.warn_status_1,
+                    warn_status_2=s.bms_extended.warn_status_2,
+                    last_update=s.bms_extended.last_update,
+                ),
             )
 
     def commanded_motion(self) -> Tuple[float, float, bool]:
@@ -572,6 +587,14 @@ class TracerCanClient:
                 if rpm is not None:
                     self._state.motor_rpm.right_rpm = rpm
                     self._state.motor_rpm.last_update = now
+            elif can_id == proto.CAN_ID_BMS_BASIC:
+                decoded = proto.decode_bms_basic(data, now)
+                if decoded is not None:
+                    self._state.bms_basic = decoded
+            elif can_id == proto.CAN_ID_BMS_EXTENDED:
+                decoded = proto.decode_bms_extended(data, now)
+                if decoded is not None:
+                    self._state.bms_extended = decoded
 
     def _motion_tx_loop(self) -> None:
         while not self._stop_event.is_set():

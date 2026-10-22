@@ -19,6 +19,8 @@ CAN_ID_SYSTEM_STATUS = 0x211
 CAN_ID_MOTION_FEEDBACK = 0x221
 CAN_ID_LIGHT_FEEDBACK = 0x231
 CAN_ID_ODOMETER = 0x311
+CAN_ID_BMS_BASIC = 0x361
+CAN_ID_BMS_EXTENDED = 0x362
 CAN_ID_CONTROL_MODE = 0x421
 CAN_ID_CLEAR_FAULT = 0x441
 CAN_ID_MOTOR_HS_1 = 0x251
@@ -37,6 +39,9 @@ MAX_ANGULAR_MRAD_S = 1000  # 0.001 rad/s units → ±1.0 rad/s
 DEFAULT_TRACK_WIDTH_M = 0.5174
 # Approximate hub-wheel circumference; override via config for accuracy.
 DEFAULT_WHEEL_CIRCUMFERENCE_M = 0.518
+
+# BMS current above this (A) ⇒ treated as charging (charger on, robot powered).
+DEFAULT_CHARGING_CURRENT_THRESHOLD_A = 0.5
 
 
 class VehicleState(IntEnum):
@@ -111,12 +116,40 @@ class MotorRpm:
 
 
 @dataclass
+class BmsBasic:
+    """Protocol V2 BMS basic frame 0x361 (ugv_sdk BmsBasicMessage)."""
+
+    soc_percent: float = 0.0
+    soh_percent: float = 0.0
+    voltage: float = 0.0
+    current_a: float = 0.0
+    temperature_c: float = 0.0
+    last_update: float = 0.0
+
+    def is_charging(self, threshold_a: float = DEFAULT_CHARGING_CURRENT_THRESHOLD_A) -> bool:
+        return self.last_update > 0 and self.current_a > float(threshold_a)
+
+
+@dataclass
+class BmsExtended:
+    """Protocol V2 BMS extended frame 0x362."""
+
+    alarm_status_1: int = 0
+    alarm_status_2: int = 0
+    warn_status_1: int = 0
+    warn_status_2: int = 0
+    last_update: float = 0.0
+
+
+@dataclass
 class TracerState:
     system: SystemStatus = field(default_factory=SystemStatus)
     motion: MotionFeedback = field(default_factory=MotionFeedback)
     light: LightFeedback = field(default_factory=LightFeedback)
     odometer: WheelOdometer = field(default_factory=WheelOdometer)
     motor_rpm: MotorRpm = field(default_factory=MotorRpm)
+    bms_basic: BmsBasic = field(default_factory=BmsBasic)
+    bms_extended: BmsExtended = field(default_factory=BmsExtended)
 
 
 def encode_motion(linear_m_s: float, angular_rad_s: float) -> bytes:
@@ -225,3 +258,32 @@ def decode_motor_rpm(data: bytes) -> Optional[float]:
         return None
     (rpm,) = struct.unpack(">h", data[0:2])
     return float(rpm)
+
+
+def decode_bms_basic(data: bytes, now: float) -> Optional[BmsBasic]:
+    """Decode 0x361: soc, soh, voltage, current (0.1 A), temperature (0.1 °C)."""
+    if len(data) < 8:
+        return None
+    voltage_raw = struct.unpack(">H", data[2:4])[0]
+    current_raw = struct.unpack(">h", data[4:6])[0]
+    temp_raw = struct.unpack(">h", data[6:8])[0]
+    return BmsBasic(
+        soc_percent=float(data[0]),
+        soh_percent=float(data[1]),
+        voltage=decode_battery_voltage(voltage_raw),
+        current_a=current_raw / 10.0,
+        temperature_c=temp_raw / 10.0,
+        last_update=now,
+    )
+
+
+def decode_bms_extended(data: bytes, now: float) -> Optional[BmsExtended]:
+    if len(data) < 4:
+        return None
+    return BmsExtended(
+        alarm_status_1=data[0],
+        alarm_status_2=data[1],
+        warn_status_1=data[2],
+        warn_status_2=data[3],
+        last_update=now,
+    )

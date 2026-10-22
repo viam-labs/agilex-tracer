@@ -20,7 +20,7 @@
     {
       "api": "rdk:component:power_sensor",
       "model": "viam-labs:agilex-tracer:power",
-      "description": "Battery voltage and chassis status from Tracer system feedback (CAN 0x211)",
+      "description": "Battery voltage/current/SOC and is_charging from Tracer system (0x211) + BMS (0x361)",
       "markdown_link": "README.md#tracer-power"
     },
     {

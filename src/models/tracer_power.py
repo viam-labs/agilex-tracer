@@ -1,7 +1,8 @@
-"""Tracer chassis battery / power sensor from system status (CAN 0x211)."""
+"""Tracer chassis battery / power sensor from system status + BMS CAN frames."""
 
 from __future__ import annotations
 
+import time
 from typing import Any, ClassVar, Dict, Mapping, Optional, Sequence, Tuple
 
 from typing_extensions import Self
@@ -22,12 +23,20 @@ from .can_client import (
 )
 from . import protocol as proto
 
+_BMS_STALE_S = 2.0
+
+
+def _attr_float(attrs: Mapping[str, Any], key: str, default: float) -> float:
+    if key not in attrs or attrs[key] is None:
+        return default
+    return float(attrs[key])
+
 
 class TracerPower(PowerSensor, EasyResource):
-    """Reports battery voltage from Tracer system status feedback.
+    """Battery voltage/current from Tracer system status (0x211) + BMS (0x361).
 
-    The chassis does not publish current or power on CAN, so those readings are
-    omitted / returned as zero.
+    Charging is inferred when BMS current exceeds ``charging_current_threshold_amps``
+    (default 0.5 A), which matches observed Tracer 2.0 behavior while powered.
     """
 
     MODEL: ClassVar[Model] = Model(ModelFamily("viam-labs", "agilex-tracer"), "power")
@@ -38,6 +47,7 @@ class TracerPower(PowerSensor, EasyResource):
         self._backend = "socketcan"
         self._channel = "can0"
         self._bitrate = 500000
+        self._charge_threshold_a = proto.DEFAULT_CHARGING_CURRENT_THRESHOLD_A
 
     @classmethod
     def new(
@@ -56,6 +66,13 @@ class TracerPower(PowerSensor, EasyResource):
             parse_can_attrs(attrs)
         except Exception as exc:
             raise Exception(str(exc)) from exc
+        threshold = _attr_float(
+            attrs,
+            "charging_current_threshold_amps",
+            proto.DEFAULT_CHARGING_CURRENT_THRESHOLD_A,
+        )
+        if threshold < 0:
+            raise Exception("charging_current_threshold_amps must be >= 0")
         return [], []
 
     def reconfigure(
@@ -63,6 +80,11 @@ class TracerPower(PowerSensor, EasyResource):
     ):
         attrs = struct_to_dict(config.attributes)
         backend, channel, bitrate, auto_up = parse_can_attrs(attrs)
+        self._charge_threshold_a = _attr_float(
+            attrs,
+            "charging_current_threshold_amps",
+            proto.DEFAULT_CHARGING_CURRENT_THRESHOLD_A,
+        )
         same = (
             self._client is not None
             and self._client.backend == backend
@@ -80,7 +102,11 @@ class TracerPower(PowerSensor, EasyResource):
         self._channel = channel
         self._bitrate = bitrate
         self.logger.info(
-            "Tracer power on %s:%s@%d", self._backend, self._channel, self._bitrate
+            "Tracer power on %s:%s@%d charge_threshold=%.2fA",
+            self._backend,
+            self._channel,
+            self._bitrate,
+            self._charge_threshold_a,
         )
 
     async def close(self):
@@ -93,8 +119,23 @@ class TracerPower(PowerSensor, EasyResource):
             raise RuntimeError("Tracer CAN client is not configured")
         return self._client
 
-    def _system(self) -> proto.SystemStatus:
-        return self._require_client().snapshot().system
+    def _snapshot(self) -> proto.TracerState:
+        return self._require_client().snapshot()
+
+    def _bms_fresh(self, bms: proto.BmsBasic) -> bool:
+        return bms.last_update > 0 and (time.time() - bms.last_update) < _BMS_STALE_S
+
+    def _volts(self, state: proto.TracerState) -> float:
+        bms = state.bms_basic
+        if self._bms_fresh(bms) and bms.voltage > 0:
+            return float(bms.voltage)
+        return float(state.system.battery_voltage)
+
+    def _amps(self, state: proto.TracerState) -> float:
+        bms = state.bms_basic
+        if self._bms_fresh(bms):
+            return float(bms.current_a)
+        return 0.0
 
     async def get_voltage(
         self,
@@ -103,7 +144,7 @@ class TracerPower(PowerSensor, EasyResource):
         timeout: Optional[float] = None,
         **kwargs,
     ) -> Tuple[float, bool]:
-        return float(self._system().battery_voltage), False
+        return self._volts(self._snapshot()), False
 
     async def get_current(
         self,
@@ -112,8 +153,7 @@ class TracerPower(PowerSensor, EasyResource):
         timeout: Optional[float] = None,
         **kwargs,
     ) -> Tuple[float, bool]:
-        # Not available on Tracer system-status CAN; keep API satisfied.
-        return 0.0, False
+        return self._amps(self._snapshot()), False
 
     async def get_power(
         self,
@@ -122,8 +162,8 @@ class TracerPower(PowerSensor, EasyResource):
         timeout: Optional[float] = None,
         **kwargs,
     ) -> float:
-        # Not available on Tracer system-status CAN.
-        return 0.0
+        state = self._snapshot()
+        return self._volts(state) * self._amps(state)
 
     async def get_readings(
         self,
@@ -132,12 +172,24 @@ class TracerPower(PowerSensor, EasyResource):
         timeout: Optional[float] = None,
         **kwargs,
     ) -> Mapping[str, SensorReading]:
-        system = self._system()
+        state = self._snapshot()
+        system = state.system
+        bms = state.bms_basic
+        ext = state.bms_extended
+        volts = self._volts(state)
+        amps = self._amps(state)
+        bms_age = (time.time() - bms.last_update) if bms.last_update > 0 else -1.0
         return {
-            "volts": float(system.battery_voltage),
-            "amps": 0.0,
-            "watts": 0.0,
+            "volts": volts,
+            "amps": amps,
+            "watts": volts * amps,
             "is_ac": False,
+            "is_charging": bms.is_charging(self._charge_threshold_a),
+            "soc_percent": float(bms.soc_percent) if self._bms_fresh(bms) else 0.0,
+            "soh_percent": float(bms.soh_percent) if self._bms_fresh(bms) else 0.0,
+            "temperature_c": float(bms.temperature_c) if self._bms_fresh(bms) else 0.0,
+            "bms_age_s": bms_age,
+            "charging_current_threshold_amps": self._charge_threshold_a,
             "vehicle_state": int(system.vehicle_state),
             "control_mode": int(system.control_mode),
             "control_mode_name": control_mode_name(system.control_mode),
@@ -145,6 +197,10 @@ class TracerPower(PowerSensor, EasyResource):
             "emergency_stop": bool(system.emergency_stop),
             "under_voltage": bool(system.under_voltage),
             "under_voltage_alarm": bool(system.under_voltage_alarm),
+            "bms_alarm_status_1": int(ext.alarm_status_1),
+            "bms_alarm_status_2": int(ext.alarm_status_2),
+            "bms_warn_status_1": int(ext.warn_status_1),
+            "bms_warn_status_2": int(ext.warn_status_2),
         }
 
     async def do_command(
@@ -156,9 +212,19 @@ class TracerPower(PowerSensor, EasyResource):
     ) -> Mapping[str, ValueTypes]:
         name = str(command.get("command", "")).strip().lower()
         if name in ("status", "get_status"):
-            system = self._system()
+            state = self._snapshot()
+            system = state.system
+            bms = state.bms_basic
             return {
-                "battery_voltage": float(system.battery_voltage),
+                "battery_voltage": self._volts(state),
+                "amps": self._amps(state),
+                "watts": self._volts(state) * self._amps(state),
+                "is_charging": bms.is_charging(self._charge_threshold_a),
+                "soc_percent": float(bms.soc_percent),
+                "soh_percent": float(bms.soh_percent),
+                "temperature_c": float(bms.temperature_c),
+                "bms_fresh": self._bms_fresh(bms),
+                "charging_current_threshold_amps": self._charge_threshold_a,
                 "vehicle_state": int(system.vehicle_state),
                 "control_mode": int(system.control_mode),
                 "control_mode_name": control_mode_name(system.control_mode),

@@ -10,7 +10,7 @@ Protocol reference: [TRACER 2.0 User Manual](https://cdn.shopify.com/s/files/1/0
 | --- | --- | --- |
 | `viam-labs:agilex-tracer:base` | `rdk:component:base` | Drive the chassis (`SetPower`, `SetVelocity`, `Stop`, open-loop `MoveStraight` / `Spin`) |
 | `viam-labs:agilex-tracer:odometry` | `rdk:component:movement_sensor` | Wheeled odometry from left/right tire odometers (0x311) + velocity feedback (0x221) |
-| `viam-labs:agilex-tracer:power` | `rdk:component:power_sensor` | Battery voltage + chassis status from system feedback (0x211) |
+| `viam-labs:agilex-tracer:power` | `rdk:component:power_sensor` | Battery voltage/current/SOC + `is_charging` from system (0x211) + BMS (0x361) |
 | `viam-labs:agilex-tracer:lights` | `rdk:component:generic` | Front light control via `DoCommand` |
 
 Wrap the base + odometry with Viam’s builtin [`sensor-controlled`](https://docs.viam.com/reference/components/base/sensor-controlled/) base for closed-loop `SetVelocity` / `MoveStraight` / `Spin`.
@@ -133,7 +133,11 @@ Reports `LinearVelocity` (Y, m/s), `AngularVelocity` (Z, deg/s), and `Orientatio
 }
 ```
 
-`GetVoltage` returns DC battery volts from system status (0x211). Current/power are not on the Tracer CAN bus (returned as 0). `GetReadings` also includes `emergency_stop`, `under_voltage`, `control_mode_name`, and related chassis flags.
+`GetVoltage` / `GetCurrent` / `GetPower` use BMS basic (`0x361`) when fresh, falling back to system-status voltage (`0x211`). `GetReadings` includes `is_charging` (BMS current above `charging_current_threshold_amps`, default `0.5`), plus `soc_percent`, `soh_percent`, `temperature_c`, and chassis flags.
+
+| Attribute | Default | Notes |
+| --- | --- | --- |
+| `charging_current_threshold_amps` | `0.5` | BMS current above this ⇒ `is_charging: true` |
 
 ### Sensor-controlled wrapper
 

@@ -72,6 +72,29 @@ class ProtocolTests(unittest.TestCase):
         # Some Tracer firmwares send ×100 (0.01 V) → raw 2650.
         self.assertAlmostEqual(proto.decode_battery_voltage(2650), 26.5)
 
+    def test_decode_bms_basic_charging(self):
+        # Live capture while charging: 4F 63 0A 7E 00 4B 01 00
+        payload = bytes.fromhex("4F630A7E004B0100")
+        bms = proto.decode_bms_basic(payload, now=1.0)
+        self.assertIsNotNone(bms)
+        assert bms is not None
+        self.assertAlmostEqual(bms.soc_percent, 79.0)
+        self.assertAlmostEqual(bms.soh_percent, 99.0)
+        self.assertAlmostEqual(bms.voltage, 26.86, places=2)
+        self.assertAlmostEqual(bms.current_a, 7.5)
+        self.assertAlmostEqual(bms.temperature_c, 25.6)
+        self.assertTrue(bms.is_charging())
+
+    def test_decode_bms_basic_discharging(self):
+        # Live capture unplugged: 51 63 0A 5C FF EA 01 01
+        payload = bytes.fromhex("51630A5CFFEA0101")
+        bms = proto.decode_bms_basic(payload, now=2.0)
+        self.assertIsNotNone(bms)
+        assert bms is not None
+        self.assertAlmostEqual(bms.soc_percent, 81.0)
+        self.assertAlmostEqual(bms.current_a, -2.2)
+        self.assertFalse(bms.is_charging())
+
 
 class BackendTests(unittest.TestCase):
     def test_resolve_explicit(self):
