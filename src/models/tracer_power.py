@@ -35,8 +35,9 @@ def _attr_float(attrs: Mapping[str, Any], key: str, default: float) -> float:
 class TracerPower(PowerSensor, EasyResource):
     """Battery voltage/current from Tracer system status (0x211) + BMS (0x361).
 
-    Charging is inferred when BMS current exceeds ``charging_current_threshold_amps``
-    (default 0.5 A), which matches observed Tracer 2.0 behavior while powered.
+    ``is_charging`` is true when BMS current exceeds ``charging_current_threshold_amps``
+    (active charge), or when SOC is 100% and |current| is near zero (full hold while
+    plugged — a powered-on Tracer draws measurable current when unplugged).
     """
 
     MODEL: ClassVar[Model] = Model(ModelFamily("viam-labs", "agilex-tracer"), "power")
@@ -48,6 +49,7 @@ class TracerPower(PowerSensor, EasyResource):
         self._channel = "can0"
         self._bitrate = 500000
         self._charge_threshold_a = proto.DEFAULT_CHARGING_CURRENT_THRESHOLD_A
+        self._idle_eps_a = proto.DEFAULT_IDLE_CURRENT_EPS_A
 
     @classmethod
     def new(
@@ -73,6 +75,11 @@ class TracerPower(PowerSensor, EasyResource):
         )
         if threshold < 0:
             raise Exception("charging_current_threshold_amps must be >= 0")
+        idle_eps = _attr_float(
+            attrs, "idle_current_eps_amps", proto.DEFAULT_IDLE_CURRENT_EPS_A
+        )
+        if idle_eps < 0:
+            raise Exception("idle_current_eps_amps must be >= 0")
         return [], []
 
     def reconfigure(
@@ -84,6 +91,9 @@ class TracerPower(PowerSensor, EasyResource):
             attrs,
             "charging_current_threshold_amps",
             proto.DEFAULT_CHARGING_CURRENT_THRESHOLD_A,
+        )
+        self._idle_eps_a = _attr_float(
+            attrs, "idle_current_eps_amps", proto.DEFAULT_IDLE_CURRENT_EPS_A
         )
         same = (
             self._client is not None
@@ -102,12 +112,16 @@ class TracerPower(PowerSensor, EasyResource):
         self._channel = channel
         self._bitrate = bitrate
         self.logger.info(
-            "Tracer power on %s:%s@%d charge_threshold=%.2fA",
+            "Tracer power on %s:%s@%d charge_threshold=%.2fA idle_eps=%.2fA",
             self._backend,
             self._channel,
             self._bitrate,
             self._charge_threshold_a,
+            self._idle_eps_a,
         )
+
+    def _is_charging(self, bms: proto.BmsBasic) -> bool:
+        return bms.is_charging(self._charge_threshold_a, self._idle_eps_a)
 
     async def close(self):
         if self._client is not None:
@@ -184,12 +198,13 @@ class TracerPower(PowerSensor, EasyResource):
             "amps": amps,
             "watts": volts * amps,
             "is_ac": False,
-            "is_charging": bms.is_charging(self._charge_threshold_a),
+            "is_charging": self._is_charging(bms),
             "soc_percent": float(bms.soc_percent) if self._bms_fresh(bms) else 0.0,
             "soh_percent": float(bms.soh_percent) if self._bms_fresh(bms) else 0.0,
             "temperature_c": float(bms.temperature_c) if self._bms_fresh(bms) else 0.0,
             "bms_age_s": bms_age,
             "charging_current_threshold_amps": self._charge_threshold_a,
+            "idle_current_eps_amps": self._idle_eps_a,
             "vehicle_state": int(system.vehicle_state),
             "control_mode": int(system.control_mode),
             "control_mode_name": control_mode_name(system.control_mode),
@@ -219,12 +234,13 @@ class TracerPower(PowerSensor, EasyResource):
                 "battery_voltage": self._volts(state),
                 "amps": self._amps(state),
                 "watts": self._volts(state) * self._amps(state),
-                "is_charging": bms.is_charging(self._charge_threshold_a),
+                "is_charging": self._is_charging(bms),
                 "soc_percent": float(bms.soc_percent),
                 "soh_percent": float(bms.soh_percent),
                 "temperature_c": float(bms.temperature_c),
                 "bms_fresh": self._bms_fresh(bms),
                 "charging_current_threshold_amps": self._charge_threshold_a,
+                "idle_current_eps_amps": self._idle_eps_a,
                 "vehicle_state": int(system.vehicle_state),
                 "control_mode": int(system.control_mode),
                 "control_mode_name": control_mode_name(system.control_mode),

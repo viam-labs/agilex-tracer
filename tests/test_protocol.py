@@ -95,6 +95,16 @@ class ProtocolTests(unittest.TestCase):
         self.assertAlmostEqual(bms.current_a, -2.2)
         self.assertFalse(bms.is_charging())
 
+    def test_decode_bms_basic_full_hold(self):
+        # Full + plugged float: 64 63 0A A9 00 00 00 FF
+        payload = bytes.fromhex("64630AA9000000FF")
+        bms = proto.decode_bms_basic(payload, now=3.0)
+        self.assertIsNotNone(bms)
+        assert bms is not None
+        self.assertAlmostEqual(bms.soc_percent, 100.0)
+        self.assertAlmostEqual(bms.current_a, 0.0)
+        self.assertTrue(bms.is_charging())
+
 
 class BackendTests(unittest.TestCase):
     def test_resolve_explicit(self):

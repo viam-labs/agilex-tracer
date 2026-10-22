@@ -133,11 +133,16 @@ Reports `LinearVelocity` (Y, m/s), `AngularVelocity` (Z, deg/s), and `Orientatio
 }
 ```
 
-`GetVoltage` / `GetCurrent` / `GetPower` use BMS basic (`0x361`) when fresh, falling back to system-status voltage (`0x211`). `GetReadings` includes `is_charging` (BMS current above `charging_current_threshold_amps`, default `0.5`), plus `soc_percent`, `soh_percent`, `temperature_c`, and chassis flags.
+`GetVoltage` / `GetCurrent` / `GetPower` use BMS basic (`0x361`) when fresh, falling back to system-status voltage (`0x211`). `GetReadings` includes `is_charging`, plus `soc_percent`, `soh_percent`, `temperature_c`, and chassis flags.
+
+`is_charging` is true when:
+- BMS current **>** `charging_current_threshold_amps` (actively charging), or
+- SOC is **100%** and `|current|` ≤ `idle_current_eps_amps` (full hold while plugged — assumes a powered-on Tracer draws measurable current when unplugged)
 
 | Attribute | Default | Notes |
 | --- | --- | --- |
-| `charging_current_threshold_amps` | `0.5` | BMS current above this ⇒ `is_charging: true` |
+| `charging_current_threshold_amps` | `0.5` | BMS current above this ⇒ actively charging |
+| `idle_current_eps_amps` | `0.15` | With SOC 100%, \|current\| at or below this ⇒ full hold / plugged |
 
 ### Sensor-controlled wrapper
 

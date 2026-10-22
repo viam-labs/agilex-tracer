@@ -40,8 +40,11 @@ DEFAULT_TRACK_WIDTH_M = 0.5174
 # Approximate hub-wheel circumference; override via config for accuracy.
 DEFAULT_WHEEL_CIRCUMFERENCE_M = 0.518
 
-# BMS current above this (A) ⇒ treated as charging (charger on, robot powered).
+# BMS current above this (A) ⇒ actively taking charge.
 DEFAULT_CHARGING_CURRENT_THRESHOLD_A = 0.5
+# |current| at or below this with SOC 100% ⇒ full + holding (plugged, not draining).
+# Assumes a powered-on Tracer draws measurable current when unplugged.
+DEFAULT_IDLE_CURRENT_EPS_A = 0.15
 
 
 class VehicleState(IntEnum):
@@ -126,8 +129,21 @@ class BmsBasic:
     temperature_c: float = 0.0
     last_update: float = 0.0
 
-    def is_charging(self, threshold_a: float = DEFAULT_CHARGING_CURRENT_THRESHOLD_A) -> bool:
-        return self.last_update > 0 and self.current_a > float(threshold_a)
+    def is_charging(
+        self,
+        threshold_a: float = DEFAULT_CHARGING_CURRENT_THRESHOLD_A,
+        idle_eps_a: float = DEFAULT_IDLE_CURRENT_EPS_A,
+    ) -> bool:
+        """True if actively charging, or full (100%) with ~0 A hold while plugged.
+
+        On a powered-on Tracer, unplugged operation draws measurable pack current, so
+        SOC 100% with near-zero current indicates charger connected in float/done mode.
+        """
+        if self.last_update <= 0:
+            return False
+        if self.current_a > float(threshold_a):
+            return True
+        return self.soc_percent >= 100.0 and abs(self.current_a) <= float(idle_eps_a)
 
 
 @dataclass
