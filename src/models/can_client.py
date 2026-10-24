@@ -333,8 +333,8 @@ class TracerCanClient:
 
         if self.backend == "slcan":
             try:
-                import serial  # noqa: F401
                 import can.interfaces.slcan  # noqa: F401
+                import serial  # noqa: F401
             except ImportError as e:
                 raise RuntimeError(
                     "slcan backend requires pyserial "

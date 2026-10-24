@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any, ClassVar, Dict, Mapping, Optional, Sequence, Tuple
+from typing import Any, ClassVar, Mapping, Optional, Sequence, Tuple
 
 from typing_extensions import Self
 from viam.components.generic import Generic
@@ -14,8 +14,8 @@ from viam.resource.easy_resource import EasyResource
 from viam.resource.types import Model, ModelFamily
 from viam.utils import ValueTypes, struct_to_dict
 
-from .can_client import TracerCanClient, get_client, parse_can_attrs, release_client
 from . import protocol as proto
+from .can_client import TracerCanClient, get_client, parse_can_attrs, release_client
 
 _MODE_ALIASES = {
     "off": proto.LightMode.OFF,
