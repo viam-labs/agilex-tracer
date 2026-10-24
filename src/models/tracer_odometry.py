@@ -419,4 +419,6 @@ class TracerOdometry(MovementSensor, EasyResource):
                 self._coord_lat = lat
                 self._coord_lng = lng
             return {"ok": True, "lat": lat, "long": lng}
-        raise Exception(f"unknown command '{name}'. Supported: reset_odometry, set_origin")
+        raise Exception(
+            f"unknown command '{name}'. Supported: reset_odometry, set_origin"
+        )

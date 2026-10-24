@@ -331,7 +331,6 @@ class TracerCanClient:
                     raise RuntimeError(_socketcan_iface_hint(self.channel)) from e
                 raise
 
-
         if self.backend == "slcan":
             try:
                 import serial  # noqa: F401
@@ -414,9 +413,7 @@ class TracerCanClient:
 
         bus = self._bus
         if bus is None:
-            raise RuntimeError(
-                f"CAN bus {self.backend}:{self.channel} is not open"
-            )
+            raise RuntimeError(f"CAN bus {self.backend}:{self.channel} is not open")
         msg = can.Message(arbitration_id=can_id, data=data, is_extended_id=False)
         try:
             bus.send(msg, timeout=0.05)
@@ -453,7 +450,6 @@ class TracerCanClient:
             self._send(proto.CAN_ID_MOTION_CMD, proto.encode_motion(linear, angular))
         except Exception as exc:
             self._log("warning", "motion command send failed: %s", exc)
-
 
     def set_light(self, enable: bool, mode: int, brightness: int = 0) -> None:
         with self._cmd_lock:

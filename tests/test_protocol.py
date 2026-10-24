@@ -117,7 +117,11 @@ class BackendTests(unittest.TestCase):
 
     def test_parse_attrs_aliases(self):
         backend, channel, bitrate, auto_up = parse_can_attrs(
-            {"can_backend": "slcan", "can_channel": "/dev/ttyACM0", "can_bitrate": 500000}
+            {
+                "can_backend": "slcan",
+                "can_channel": "/dev/ttyACM0",
+                "can_bitrate": 500000,
+            }
         )
         self.assertEqual(backend, "slcan")
         self.assertEqual(channel, "/dev/ttyACM0")

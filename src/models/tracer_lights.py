@@ -195,7 +195,6 @@ class TracerLights(Generic, EasyResource):
                 "can_bitrate": self._bitrate,
             }
 
-
         if name == "release":
             # Stop keepalive so chassis can time out light control.
             await asyncio.to_thread(client.set_light, False, proto.LightMode.OFF, 0)
