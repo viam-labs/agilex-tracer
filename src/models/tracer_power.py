@@ -14,6 +14,7 @@ from viam.resource.easy_resource import EasyResource
 from viam.resource.types import Model, ModelFamily
 from viam.utils import SensorReading, ValueTypes, struct_to_dict
 
+from . import protocol as proto
 from .can_client import (
     TracerCanClient,
     control_mode_name,
@@ -21,7 +22,6 @@ from .can_client import (
     parse_can_attrs,
     release_client,
 )
-from . import protocol as proto
 
 _BMS_STALE_S = 2.0
 

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import math
-import time
 from typing import Any, ClassVar, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from typing_extensions import Self
@@ -16,6 +15,7 @@ from viam.resource.easy_resource import EasyResource
 from viam.resource.types import Model, ModelFamily
 from viam.utils import ValueTypes, struct_to_dict
 
+from . import protocol as proto
 from .can_client import (
     TracerCanClient,
     clamp_linear_angular,
@@ -24,7 +24,6 @@ from .can_client import (
     parse_can_attrs,
     release_client,
 )
-from . import protocol as proto
 
 
 def _attr_float(attrs: Mapping[str, Any], key: str, default: float) -> float:

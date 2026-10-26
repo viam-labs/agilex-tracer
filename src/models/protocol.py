@@ -85,7 +85,10 @@ class SystemStatus:
 
     @property
     def emergency_stop(self) -> bool:
-        return bool(self.fault_bits & (1 << 15)) or self.vehicle_state == VehicleState.EMERGENCY_STOP
+        return (
+            bool(self.fault_bits & (1 << 15))
+            or self.vehicle_state == VehicleState.EMERGENCY_STOP
+        )
 
 
 @dataclass

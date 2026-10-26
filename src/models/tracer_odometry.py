@@ -23,8 +23,8 @@ from viam.resource.easy_resource import EasyResource
 from viam.resource.types import Model, ModelFamily
 from viam.utils import ValueTypes, struct_to_dict
 
-from .can_client import TracerCanClient, get_client, parse_can_attrs, release_client
 from . import protocol as proto
+from .can_client import TracerCanClient, get_client, parse_can_attrs, release_client
 
 _M_TO_KM = 0.001
 
@@ -419,4 +419,6 @@ class TracerOdometry(MovementSensor, EasyResource):
                 self._coord_lat = lat
                 self._coord_lng = lng
             return {"ok": True, "lat": lat, "long": lng}
-        raise Exception(f"unknown command '{name}'. Supported: reset_odometry, set_origin")
+        raise Exception(
+            f"unknown command '{name}'. Supported: reset_odometry, set_origin"
+        )
