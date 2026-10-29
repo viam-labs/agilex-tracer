@@ -47,6 +47,21 @@ def _forward_from_linear(linear: Vector3) -> float:
     return x
 
 
+def _open_loop_speed(
+    requested: float, configured_max: float, protocol_max: float
+) -> float:
+    """Speed the chassis actually runs at for an open-loop move.
+
+    Commands are clamped to the configured limit and again by the CAN encoder,
+    so an open-loop move must be timed from the clamped speed. Timing it from
+    the requested speed stops the base short of the requested distance/angle.
+    """
+    limit = protocol_max
+    if configured_max > 0:
+        limit = min(limit, configured_max)
+    return min(abs(requested), limit)
+
+
 class TracerBase(Base, EasyResource):
     MODEL: ClassVar[Model] = Model(ModelFamily("viam-labs", "agilex-tracer"), "base")
 
@@ -256,7 +271,9 @@ class TracerBase(Base, EasyResource):
 
         await self._cancel_move_task()
         distance_m = abs(distance) / 1000.0
-        speed_m_s = abs(velocity) / 1000.0
+        speed_m_s = _open_loop_speed(
+            velocity / 1000.0, self._max_linear_m_s, proto.MAX_LINEAR_MM_S / 1000.0
+        )
         direction = 1.0 if distance > 0 else -1.0
         if velocity < 0:
             direction *= -1.0
@@ -297,7 +314,11 @@ class TracerBase(Base, EasyResource):
 
         await self._cancel_move_task()
         angle_rad = math.radians(abs(angle))
-        speed_rad_s = math.radians(abs(velocity))
+        speed_rad_s = _open_loop_speed(
+            math.radians(velocity),
+            self._max_angular_rad_s,
+            proto.MAX_ANGULAR_MRAD_S / 1000.0,
+        )
         direction = 1.0 if angle > 0 else -1.0
         if velocity < 0:
             direction *= -1.0
